@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+
+# Notebook/runtime artifacts
+.ipynb_checkpoints/
+.DS_Store
+
+# Large generated assets and external repositories
+BFM/
+checkpoints/
+datasets/
+input_images_inpainted/
+original_images_for_recon/
+individual_inpainted_results/
+individual_original_results/
+Deep3DFaceRecon_pytorch/
+face-parsing.PyTorch/
+insightface/
+outputs/
+*.obj
+*.mat
+*.pth
+*.pt
+*.npy
+*.npz

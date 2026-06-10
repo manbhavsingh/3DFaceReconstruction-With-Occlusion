@@ -1,0 +1,13 @@
+numpy>=1.23
+opencv-python>=4.8
+Pillow>=10
+torch>=2.0
+torchvision>=0.15
+scikit-image>=0.21
+trimesh>=4.0
+pandas>=2.0
+scipy>=1.10
+tqdm>=4.66
+mtcnn>=0.1.1
+face-alignment>=1.4
+matplotlib>=3.7
