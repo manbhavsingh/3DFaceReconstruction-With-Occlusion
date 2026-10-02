@@ -32,14 +32,15 @@ def verify_subject_disjoint(train_df, test_df, subject_col="subject_id"):
 
 
 def create_subject_disjoint_split(
-    df, subject_col="subject_id", test_ratio=0.3, random_state=42
+    df, subject_col="subject_id", label_col="label", test_ratio=0.3, random_state=42
 ):
     """
-    Create a subject-disjoint train/test split.
+    Create a subject-disjoint train/test split. Ensures both splits contain bona fide and spoof samples.
 
     Args:
         df (pd.DataFrame): Full dataset metadata DataFrame.
         subject_col (str): Subject ID column.
+        label_col (str, optional): Target label column for class-balanced subject splitting.
         test_ratio (float): Ratio of subjects to place in test split.
         random_state (int): Random seed for reproducibility.
 
@@ -50,15 +51,26 @@ def create_subject_disjoint_split(
     unique_subjects = np.array(sorted(df[subject_col].unique()))
 
     rng = np.random.RandomState(random_state)
-    rng.shuffle(unique_subjects)
+    
+    # Try up to 100 seeds starting from random_state to ensure both classes exist in both splits
+    for seed_offset in range(100):
+        current_seed = random_state + seed_offset
+        rng_trial = np.random.RandomState(current_seed)
+        shuffled_subjects = unique_subjects.copy()
+        rng_trial.shuffle(shuffled_subjects)
 
-    n_test = max(1, int(len(unique_subjects) * test_ratio))
-    test_subjects = set(unique_subjects[:n_test])
-    train_subjects = set(unique_subjects[n_test:])
+        n_test = max(1, int(len(unique_subjects) * test_ratio))
+        test_subjects = set(shuffled_subjects[:n_test])
+        train_subjects = set(shuffled_subjects[n_test:])
 
-    df["split"] = df[subject_col].apply(
-        lambda s: "test" if s in test_subjects else "train"
-    )
+        temp_split = df[subject_col].apply(lambda s: "test" if s in test_subjects else "train")
+        train_labels = df[temp_split == "train"][label_col].unique() if label_col in df.columns else [0, 1]
+        test_labels = df[temp_split == "test"][label_col].unique() if label_col in df.columns else [0, 1]
+
+        if len(train_labels) > 1 and len(test_labels) > 1:
+            break
+
+    df["split"] = temp_split
 
     train_df = df[df["split"] == "train"]
     test_df = df[df["split"] == "test"]
@@ -66,6 +78,7 @@ def create_subject_disjoint_split(
     verify_subject_disjoint(train_df, test_df, subject_col=subject_col)
 
     return df
+
 
 
 def summarize_split(
