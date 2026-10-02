@@ -11,12 +11,6 @@ Restart-Safe Policy:
   3. Extract features ONLY for missing/unprocessed samples.
   4. Save/append progress immediately after every sample to survive Colab runtime disconnects.
   5. Never delete or overwrite valid existing entries unless --force-recompute is explicitly set.
-
-Usage:
-  python scripts/run_geometry_extraction.py \
-      --mesh-dir /content/drive/MyDrive/BTP_Part2_OULU/subject_disjoint_pilot_100/reconstructions \
-      --metadata-csv /content/drive/MyDrive/BTP_Part2_OULU/subject_disjoint_pilot_100/oulu_subject_disjoint_pilot_100.csv \
-      --output-csv /content/drive/MyDrive/BTP_Part2_OULU/subject_disjoint_pilot_100/oulu_geometry_features.csv
 """
 
 import argparse
@@ -73,12 +67,23 @@ def parse_args():
     return parser.parse_args()
 
 
+def normalize_id(sid):
+    """Normalize sample ID string by stripping whitespace and common extension suffixes."""
+    if pd.isna(sid):
+        return ""
+    s = str(sid).strip()
+    for ext in [".jpg", ".jpeg", ".png", ".obj", ".mat"]:
+        if s.lower().endswith(ext):
+            s = s[:-len(ext)]
+    return s
+
+
 def load_cache(output_csv, force_recompute=False):
     """
     Load existing feature table cache from output_csv if present.
 
     Returns:
-        dict: Mapping of sample_id -> row_dict, and list of existing DataFrames.
+        dict: Mapping of sample_id -> row_dict.
     """
     cache_dict = {}
     if not output_csv.exists() or force_recompute:
@@ -134,16 +139,27 @@ def main():
         print(f"❌ Error: Mesh directory does not exist: {mesh_dir}")
         sys.exit(1)
 
-    # 1. Load Metadata if provided
+    # 1. Load Metadata if provided with extension-agnostic key mapping
     metadata_map = {}
     if args.metadata_csv and Path(args.metadata_csv).exists():
         print(f"Reading dataset metadata from: {args.metadata_csv}")
         meta_df = pd.read_csv(args.metadata_csv)
-        if "sample_id" in meta_df.columns:
+
+        id_col = None
+        for candidate in ["sample_id", "filename", "image_path", "name", "id"]:
+            if candidate in meta_df.columns:
+                id_col = candidate
+                break
+
+        if id_col:
             for _, r in meta_df.iterrows():
-                metadata_map[str(r["sample_id"])] = r.to_dict()
+                norm_key = normalize_id(r[id_col])
+                metadata_map[norm_key] = r.to_dict()
+                # Also store exact raw string if different
+                metadata_map[str(r[id_col]).strip()] = r.to_dict()
+            print(f"✅ Mapped {len(metadata_map)} metadata records using ID column '{id_col}'.")
         else:
-            print("⚠️ Metadata CSV missing 'sample_id' column. Matching by filename stem.")
+            print("⚠️ Metadata CSV missing recognized ID column (sample_id, filename, name, etc.).")
 
     # 2. Load Existing Cache
     cache_dict = load_cache(output_csv, force_recompute=args.force_recompute)
@@ -165,9 +181,17 @@ def main():
     pbar = tqdm(obj_files, desc="Batch Feature Extraction")
     for idx, obj_path in enumerate(pbar):
         sample_id = obj_path.stem
+        norm_stem = normalize_id(sample_id)
 
-        # CACHE-FIRST: Skip already processed sample
+        # Check if already in cache
         if sample_id in cache_dict and not args.force_recompute:
+            # Backfill metadata if missing in cached row
+            rec = cache_dict[sample_id]
+            matched_meta = metadata_map.get(norm_stem) or metadata_map.get(sample_id)
+            if matched_meta:
+                for k, v in matched_meta.items():
+                    if k not in rec or pd.isna(rec[k]):
+                        rec[k] = v
             reused_count += 1
             continue
 
@@ -180,8 +204,9 @@ def main():
             }
 
             # Merge metadata attributes (subject_id, label, attack_id, device_id, etc.)
-            if sample_id in metadata_map:
-                for k, v in metadata_map[sample_id].items():
+            matched_meta = metadata_map.get(norm_stem) or metadata_map.get(sample_id)
+            if matched_meta:
+                for k, v in matched_meta.items():
                     if k not in rec:
                         rec[k] = v
 
@@ -197,9 +222,19 @@ def main():
             failed_count += 1
             print(f"\n❌ Error processing OBJ {obj_path}: {err}")
 
+    # Backfill any remaining cached records if metadata was missing
+    if metadata_map:
+        for rec in records:
+            sid = str(rec.get("sample_id", ""))
+            norm_sid = normalize_id(sid)
+            matched_meta = metadata_map.get(norm_sid) or metadata_map.get(sid)
+            if matched_meta:
+                for k, v in matched_meta.items():
+                    if k not in rec or pd.isna(rec[k]):
+                        rec[k] = v
+
     # Final Save
-    if computed_count > 0:
-        save_progress(records, output_csv)
+    save_progress(records, output_csv)
 
     print("\n==========================================")
     print("Geometry Feature Extraction Summary")

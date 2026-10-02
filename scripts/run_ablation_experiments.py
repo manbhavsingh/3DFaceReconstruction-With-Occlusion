@@ -41,6 +41,12 @@ def parse_args():
         help="Input CSV containing extracted geometry features and metadata.",
     )
     parser.add_argument(
+        "--metadata-csv",
+        type=str,
+        default=None,
+        help="Optional dataset metadata CSV to merge if subject_id or label is missing in features CSV.",
+    )
+    parser.add_argument(
         "--output-dir",
         type=str,
         default="outputs/ablation_results",
@@ -67,6 +73,16 @@ def parse_args():
     return parser.parse_args()
 
 
+def normalize_id(sid):
+    if pd.isna(sid):
+        return ""
+    s = str(sid).strip()
+    for ext in [".jpg", ".jpeg", ".png", ".obj", ".mat"]:
+        if s.lower().endswith(ext):
+            s = s[:-len(ext)]
+    return s
+
+
 def main():
     args = parse_args()
     features_csv = Path(args.features_csv)
@@ -87,6 +103,39 @@ def main():
 
     df = pd.read_csv(features_csv)
 
+    # Backfill metadata if subject_col or label_col is missing
+    if (args.subject_col not in df.columns or args.label_col not in df.columns) and args.metadata_csv:
+        meta_path = Path(args.metadata_csv)
+        if meta_path.exists():
+            print(f"ℹ️ '{args.subject_col}' or '{args.label_col}' missing in features CSV. Merging metadata from {meta_path}...")
+            meta_df = pd.read_csv(meta_path)
+            
+            id_col = None
+            for candidate in ["sample_id", "filename", "image_path", "name", "id"]:
+                if candidate in meta_df.columns:
+                    id_col = candidate
+                    break
+
+            if id_col and "sample_id" in df.columns:
+                df["_norm_id"] = df["sample_id"].apply(normalize_id)
+                meta_df["_norm_id"] = meta_df[id_col].apply(normalize_id)
+                cols_to_merge = [c for c in [args.subject_col, args.label_col, "attack_id", "device_id"] if c in meta_df.columns and c not in df.columns]
+                df = df.merge(meta_df[["_norm_id"] + cols_to_merge], on="_norm_id", how="left").drop(columns=["_norm_id"])
+
+    # Validate column presence
+    if args.subject_col not in df.columns:
+        raise KeyError(
+            f"Missing required column '{args.subject_col}' in DataFrame! "
+            f"Available columns: {list(df.columns)}. "
+            f"Please ensure metadata CSV is provided or feature extraction includes subject_id."
+        )
+
+    if args.label_col not in df.columns:
+        raise KeyError(
+            f"Missing required column '{args.label_col}' in DataFrame! "
+            f"Available columns: {list(df.columns)}."
+        )
+
     # Enforce subject-disjoint split if 'split' column is not already present
     if "split" not in df.columns:
         print("Creating subject-disjoint train/test split...")
@@ -97,7 +146,7 @@ def main():
     train_df = df[df["split"] == "train"]
     test_df = df[df["split"] == "test"]
 
-    # STAGE 5 / REQUIREMENT 7: Verify Subject Disjointness
+    # Verify Subject Disjointness
     print("\n🔍 Verifying Subject Disjointness...")
     verify_subject_disjoint(train_df, test_df, subject_col=args.subject_col)
     print("✅ Verified: train_subjects ∩ test_subjects = EMPTY SET.")
