@@ -78,9 +78,24 @@ def run_ablation_experiments(df, subject_col="subject_id", label_col="label", ra
         )
 
         y_pred = pipeline.predict(X_test)
-        y_prob = pipeline.predict_proba(X_test)[:, 1] if hasattr(pipeline, "predict_proba") else None
 
-        metrics = compute_pad_metrics(y_test, y_pred, y_prob)
+        # Extract continuous decision scores for ROC-AUC ranking evaluation.
+        # In scikit-learn binary SVC, decision_function corresponds to classes_[1].
+        # Verify alignment with positive class 1 (Spoof).
+        y_score = None
+        if hasattr(pipeline, "decision_function"):
+            decision = pipeline.decision_function(X_test)
+            classes = list(getattr(pipeline, "classes_", [0, 1]))
+            if classes == [0, 1]:
+                y_score = decision
+            elif classes == [1, 0]:
+                y_score = -decision
+            else:
+                y_score = decision
+        elif hasattr(pipeline, "predict_proba"):
+            y_score = pipeline.predict_proba(X_test)[:, 1]
+
+        metrics = compute_pad_metrics(y_test, y_pred, y_score=y_score)
         metrics["experiment"] = exp_name
         metrics["num_features"] = len(feature_list)
         metrics["feature_list"] = ", ".join(feature_list)

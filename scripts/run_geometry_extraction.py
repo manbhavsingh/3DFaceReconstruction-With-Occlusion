@@ -25,6 +25,7 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 
 try:
     from face_recon_occlusion.geometry import extract_geometry_features
+    from face_recon_occlusion.data import normalize_id
 except ImportError as err:
     print(f"Import Error: {err}")
     print("Ensure script is executed from repository root or src/ is on PYTHONPATH.")
@@ -65,17 +66,6 @@ def parse_args():
         help="Force recomputation of all samples, ignoring existing cache.",
     )
     return parser.parse_args()
-
-
-def normalize_id(sid):
-    """Normalize sample ID string by stripping whitespace and common extension suffixes."""
-    if pd.isna(sid):
-        return ""
-    s = str(sid).strip()
-    for ext in [".jpg", ".jpeg", ".png", ".obj", ".mat"]:
-        if s.lower().endswith(ext):
-            s = s[:-len(ext)]
-    return s
 
 
 def load_cache(output_csv, force_recompute=False):

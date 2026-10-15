@@ -19,11 +19,17 @@ dependencies = [
   "pandas>=2.0",
   "scipy>=1.10",
   "tqdm>=4.66",
+  "scikit-learn>=1.2",
+  "seaborn>=0.12",
 ]
 
 [project.optional-dependencies]
 landmarks = ["mtcnn>=0.1.1", "face-alignment>=1.4"]
 notebook = ["matplotlib>=3.7", "ipython>=8"]
+test = ["pytest>=7.0"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]

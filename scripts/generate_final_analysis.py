@@ -27,6 +27,7 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from face_recon_occlusion.data import (
     create_subject_disjoint_split,
+    normalize_id,
     summarize_split,
     verify_subject_disjoint,
 )
@@ -64,17 +65,17 @@ def parse_args():
         default=100,
         help="Secondary robustness subject-disjoint split seed.",
     )
+    parser.add_argument(
+        "--allow-synthetic",
+        action="store_true",
+        help="Explicitly permit generating mock synthetic features for code verification if input CSV is missing.",
+    )
+    parser.add_argument(
+        "--force-resplit",
+        action="store_true",
+        help="Force recomputation of primary split even if 'split' column is present in features CSV.",
+    )
     return parser.parse_args()
-
-
-def normalize_id(sid):
-    if pd.isna(sid):
-        return ""
-    s = str(sid).strip()
-    for ext in [".jpg", ".jpeg", ".png", ".obj", ".mat"]:
-        if s.lower().endswith(ext):
-            s = s[:-len(ext)]
-    return s
 
 
 def generate_pipeline_diagram(save_path):
@@ -232,7 +233,7 @@ def generate_failure_plots(df_test, failures, save_path):
         lambda r: "Correct" if r["label"] == r["y_pred"] else ("FP" if r["label"] == 0 else "FN"), axis=1
     )
 
-    sns.boxplot(data=df_test_copy, x="Status", y="depth_std", palette="Set2", ax=axes[1])
+    sns.boxplot(data=df_test_copy, x="Status", y="depth_std", hue="Status", palette="Set2", legend=False, ax=axes[1])
     axes[1].set_title("depth_std Distribution by Prediction Status", fontweight="bold")
     axes[1].set_ylabel("depth_std")
 
@@ -250,7 +251,12 @@ def main():
     figures_dir.mkdir(parents=True, exist_ok=True)
 
     if not features_csv.exists():
-        print(f"ℹ️ Local features CSV not found at {features_csv}. Generating synthetic Pilot-100 dataset for verification...")
+        if not args.allow_synthetic:
+            raise FileNotFoundError(
+                f"Features CSV not found: {features_csv}. "
+                f"To generate mock synthetic data for code testing only, explicitly pass --allow-synthetic."
+            )
+        print(f"⚠️ WARNING: Generating synthetic mock Pilot-100 dataset (--allow-synthetic set). This is for code testing only, NOT real experimental results.")
         np.random.seed(42)
         n_samples = 100
         subjects = np.array([f"sub_{(i % 20) + 1:02d}" for i in range(n_samples)])
@@ -286,6 +292,7 @@ def main():
     print("==========================================")
     print("BTP PART 2 FINAL ANALYSIS & REPORT BUILDER")
     print("==========================================")
+    print("Note: Subject-disjoint pilot split evaluation (not an official OULU-NPU protocol)")
     print(f"Input CSV    : {features_csv}")
     print(f"Output Dir   : {output_dir}")
     print(f"Figures Dir  : {figures_dir}")
@@ -304,18 +311,26 @@ def main():
 
     # SECTION 1: PRIMARY SPLIT & ABLATION STUDY
     print("\n📊 Executing Primary Split (Seed 42) & 5 Ablation Experiments...")
-    df_primary = create_subject_disjoint_split(df, subject_col="subject_id", label_col="label", test_ratio=0.25, random_state=args.seed_primary)
+    if "split" in df.columns and not args.force_resplit:
+        print("ℹ️ Reusing existing primary 'split' column from input CSV to guarantee split consistency across all evaluations.")
+        df_primary = df
+    else:
+        df_primary = create_subject_disjoint_split(df, subject_col="subject_id", label_col="label", test_ratio=0.25, random_state=args.seed_primary)
+
     train_primary = df_primary[df_primary["split"] == "train"]
     test_primary = df_primary[df_primary["split"] == "test"]
     verify_subject_disjoint(train_primary, test_primary, subject_col="subject_id")
 
     ablation_df = run_ablation_experiments(df_primary, subject_col="subject_id", label_col="label", random_state=args.seed_primary)
 
-    # Primary baseline model
+    # Primary baseline model (extract continuous decision scores for ROC-AUC)
     svm_primary = train_svm(train_primary[features_list].values, train_primary["label"].values, random_state=args.seed_primary)
     y_pred_prim = svm_primary.predict(test_primary[features_list].values)
-    y_prob_prim = svm_primary.predict_proba(test_primary[features_list].values)[:, 1]
-    m_primary = compute_pad_metrics(test_primary["label"].values, y_pred_prim, y_prob_prim)
+    y_score_prim = svm_primary.decision_function(test_primary[features_list].values)
+    classes_prim = list(getattr(svm_primary, "classes_", [0, 1]))
+    if classes_prim == [1, 0]:
+        y_score_prim = -y_score_prim
+    m_primary = compute_pad_metrics(test_primary["label"].values, y_pred_prim, y_score=y_score_prim)
 
     # SECTION 2: ROBUSTNESS CHECK (SECONDARY SPLIT)
     print("\n🔄 Executing Robustness Check (Secondary Split, Seed 100)...")
@@ -326,15 +341,19 @@ def main():
 
     svm_robust = train_svm(train_robust[features_list].values, train_robust["label"].values, random_state=args.seed_primary)
     y_pred_rob = svm_robust.predict(test_robust[features_list].values)
-    y_prob_rob = svm_robust.predict_proba(test_robust[features_list].values)[:, 1] if hasattr(svm_robust, "predict_proba") else None
-    m_robust = compute_pad_metrics(test_robust["label"].values, y_pred_rob, y_prob_rob)
+    y_score_rob = svm_robust.decision_function(test_robust[features_list].values) if hasattr(svm_robust, "decision_function") else None
+    if y_score_rob is not None:
+        classes_rob = list(getattr(svm_robust, "classes_", [0, 1]))
+        if classes_rob == [1, 0]:
+            y_score_rob = -y_score_rob
+    m_robust = compute_pad_metrics(test_robust["label"].values, y_pred_rob, y_score=y_score_rob)
 
     # SECTION 3: FAILURE ANALYSIS
     print("\n🔍 Performing Granular Failure Analysis...")
     failures_primary = analyze_failures(
         test_primary,
         y_pred_prim,
-        y_prob_prim,
+        y_score_prim,
         subject_col="subject_id",
         attack_col="attack_id" if "attack_id" in test_primary.columns else None,
         device_col="device_id" if "device_id" in test_primary.columns else None,
@@ -345,7 +364,7 @@ def main():
     generate_pipeline_diagram(figures_dir / "01_pipeline_diagram.png")
     generate_ablation_plot(ablation_df, figures_dir / "06_ablation_comparison.png")
     generate_confusion_matrices(np.array(m_primary["confusion_matrix"]), np.array(m_robust["confusion_matrix"]), figures_dir / "07_confusion_matrix.png")
-    generate_roc_curves(test_primary["label"].values, y_prob_prim, test_robust["label"].values, y_prob_rob, figures_dir / "08_roc_curve.png")
+    generate_roc_curves(test_primary["label"].values, y_score_prim, test_robust["label"].values, y_score_rob, figures_dir / "08_roc_curve.png")
 
     test_primary_copy = test_primary.copy()
     test_primary_copy["y_pred"] = y_pred_prim
@@ -360,6 +379,8 @@ def main():
     summary_json = {
         "timestamp": datetime.now().isoformat(),
         "dataset": "OULU-NPU (Pilot-100)",
+        "protocol": "subject_disjoint_pilot_split (NOT official OULU-NPU protocol evaluation)",
+        "score_type": "svm_decision_function (distance to hyperplane, positive class = 1/Spoof)",
         "total_samples": len(df),
         "total_subjects": df["subject_id"].nunique(),
         "primary_split": summarize_split(df_primary, subject_col="subject_id", label_col="label"),

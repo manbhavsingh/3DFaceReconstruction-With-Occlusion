@@ -64,12 +64,13 @@ def extract_gradient_features(
     if len(valid_gradient) == 0:
         raise ValueError("No valid depth-gradient values found during grid interpolation.")
 
-    gradient_normalized = valid_gradient / xy_scale
+    # The spatial depth gradient |∇Z| = sqrt((dZ/dx)^2 + (dZ/dy)^2) is already
+    # a dimensionless geometric quantity (slope = rise / run). It is scale-invariant
+    # under uniform 3D scaling (sX, sY, sZ). Do not divide by xy_scale.
+    g_low = np.percentile(valid_gradient, clip_percentiles[0])
+    g_high = np.percentile(valid_gradient, clip_percentiles[1])
 
-    g_low = np.percentile(gradient_normalized, clip_percentiles[0])
-    g_high = np.percentile(gradient_normalized, clip_percentiles[1])
-
-    gradient_clipped = np.clip(gradient_normalized, g_low, g_high)
+    gradient_clipped = np.clip(valid_gradient, g_low, g_high)
 
     gradient_mean = float(np.mean(gradient_clipped))
     gradient_std = float(np.std(gradient_clipped))

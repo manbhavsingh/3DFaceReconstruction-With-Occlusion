@@ -6,6 +6,17 @@ import numpy as np
 import pandas as pd
 
 
+def normalize_id(sid):
+    """Normalize sample ID string by stripping whitespace and common extension suffixes."""
+    if pd.isna(sid):
+        return ""
+    s = str(sid).strip()
+    for ext in [".jpg", ".jpeg", ".png", ".obj", ".mat"]:
+        if s.lower().endswith(ext):
+            s = s[:-len(ext)]
+    return s
+
+
 def verify_subject_disjoint(train_df, test_df, subject_col="subject_id"):
     """
     Verify that train and test subject sets are strictly disjoint.
@@ -32,7 +43,7 @@ def verify_subject_disjoint(train_df, test_df, subject_col="subject_id"):
 
 
 def create_subject_disjoint_split(
-    df, subject_col="subject_id", label_col="label", test_ratio=0.3, random_state=42
+    df, subject_col="subject_id", label_col="label", test_ratio=0.25, random_state=42
 ):
     """
     Create a subject-disjoint train/test split. Ensures both splits contain bona fide and spoof samples.
