@@ -154,7 +154,7 @@ The 100-sample pilot is **not an official OULU-NPU protocol evaluation**. Synthe
 
 ### Corrected Colab run
 
-Use the notebook `BTP_Part2_Geometry_PAD_OULU_corrected.ipynb` (distributed separately with the Phase 2 branch) from a Colab runtime with Google Drive mounted. It writes to a unique timestamped `phase2_corrected_runs/` folder and does not overwrite the original `oulu_geometry_features.csv`.
+Use the companion notebook `BTP_Part2_Geometry_PAD_OULU_corrected.ipynb` supplied with this change from a Colab runtime with Google Drive mounted. It checks out the `btp-phase2-corrected` branch and includes explicit checkpoints after each stage. It writes to a unique timestamped `phase2_corrected_runs/` folder and does not overwrite the original `oulu_geometry_features.csv`.
 
 Expected experiment outputs:
 - `oulu_geometry_features_corrected.csv`
