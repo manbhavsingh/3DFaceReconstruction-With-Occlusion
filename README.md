@@ -139,3 +139,40 @@ to pass `python -m py_compile`.  The reusable package and scripts should pass:
 ```bash
 python -m compileall src scripts
 ```
+
+
+## BTP Part 2 — geometry-based PAD pilot
+
+The Phase 2 branch adds a reproducible feature-extraction and evaluation pipeline:
+- Six mesh-level features: depth standard deviation/range, depth-gradient mean/std, and Gaussian-curvature mean/std.
+- Subject-disjoint splits and five feature ablations using a StandardScaler + RBF-SVM baseline.
+- PAD metrics including APCER, BPCER, ACER, ROC-AUC, F1 and confusion matrices.
+- Failure analysis, nine numbered figures, strict JSON summary, final CSV and a Markdown report.
+- A smoke test that executes the complete final-analysis command on explicitly labelled synthetic data.
+
+The 100-sample pilot is **not an official OULU-NPU protocol evaluation**. Synthetic smoke-test metrics verify software execution only and must not be reported as research results.
+
+### Corrected Colab run
+
+Use the notebook `BTP_Part2_Geometry_PAD_OULU_corrected.ipynb` (distributed separately with the Phase 2 branch) from a Colab runtime with Google Drive mounted. It writes to a unique timestamped `phase2_corrected_runs/` folder and does not overwrite the original `oulu_geometry_features.csv`.
+
+Expected experiment outputs:
+- `oulu_geometry_features_corrected.csv`
+- `ablation_results_corrected/results.csv` and `experiment_config.json`
+- `final_analysis_corrected/final_results.csv`
+- `final_analysis_corrected/final_experiment_summary.json`
+- `final_analysis_corrected/FINAL_ANALYSIS.md`
+- Nine figures in `final_analysis_corrected/final_figures/`
+
+The notebook checks outputs after each stage and stops on a failed assertion or subprocess. The gradient-scale comparison should show that the corrected gradient no longer divides by `xy_scale`; other geometry features should stay unchanged within tolerance. Review extraction failures, subject-disjoint split checks, and the report before using results.
+
+### Automated checks
+
+GitHub Actions runs:
+
+```bash
+python -m compileall -q src scripts
+python -m pytest -q
+```
+
+The end-to-end smoke test uses synthetic data and does not require Google Drive, OBJ pilot meshes, the Deep3DFaceRecon checkpoint, or the official OULU-NPU data. Passing CI therefore confirms code/output generation, not that the private Colab pilot has completed successfully.
