@@ -26,7 +26,7 @@ dependencies = [
 [project.optional-dependencies]
 landmarks = ["mtcnn>=0.1.1", "face-alignment>=1.4"]
 notebook = ["matplotlib>=3.7", "ipython>=8"]
-reconstruction = ["kornia>=0.7"]
+reconstruction = ["kornia>=0.7", "dominate>=2.9"]
 test = ["pytest>=7.0"]
 
 [tool.setuptools.packages.find]
