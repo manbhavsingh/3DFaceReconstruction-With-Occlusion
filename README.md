@@ -55,7 +55,7 @@ pip install -e .
 For the full landmark/notebook workflow, install optional dependencies:
 
 ```bash
-pip install -e '.[landmarks,notebook]'
+pip install -e '.[landmarks,notebook,reconstruction]'
 ```
 
 You still need external model assets that are not committed to this repository:
@@ -139,3 +139,68 @@ to pass `python -m py_compile`.  The reusable package and scripts should pass:
 ```bash
 python -m compileall src scripts
 ```
+
+
+## BTP Part 2 — geometry-based PAD pilot
+
+The Phase 2 branch adds a reproducible feature-extraction and evaluation pipeline:
+- Six mesh-level features: depth standard deviation/range, depth-gradient mean/std, and Gaussian-curvature mean/std.
+- Subject-disjoint splits and five feature ablations using a StandardScaler + RBF-SVM baseline.
+- PAD metrics including APCER, BPCER, ACER, ROC-AUC, F1 and confusion matrices.
+- Failure analysis, nine numbered figures, strict JSON summary, final CSV and a Markdown report.
+- A smoke test that executes the complete final-analysis command on explicitly labelled synthetic data.
+
+The 100-sample pilot is **not an official OULU-NPU protocol evaluation**. Synthetic smoke-test metrics verify software execution only and must not be reported as research results.
+
+### Corrected Colab run
+
+Use the companion notebook `BTP_Part2_Geometry_PAD_OULU_corrected.ipynb` supplied with this change from a Colab runtime with Google Drive mounted. It checks out the `btp-phase2-corrected` branch and includes explicit checkpoints after each stage. It writes to a unique timestamped `phase2_corrected_runs/` folder and does not overwrite the original `oulu_geometry_features.csv`.
+
+Expected experiment outputs:
+- `oulu_geometry_features_corrected.csv`
+- `ablation_results_corrected/results.csv` and `experiment_config.json`
+- `final_analysis_corrected/final_results.csv`
+- `final_analysis_corrected/final_experiment_summary.json`
+- `final_analysis_corrected/FINAL_ANALYSIS.md`
+- Nine figures in `final_analysis_corrected/final_figures/`
+
+The notebook checks outputs after each stage and stops on a failed assertion or subprocess. The gradient-scale comparison should show that the corrected gradient no longer divides by `xy_scale`; other geometry features should stay unchanged within tolerance. Review extraction failures, subject-disjoint split checks, and the report before using results.
+
+### Reconstruction-runtime preflight
+
+The upstream Deep3DFaceRecon checkout imports both `kornia` and `dominate`.
+Installing a package in one notebook/kernel interpreter does not prove that a
+separately launched Python executable can import it. Check the exact interpreter
+used for `test.py` before retrying an image:
+
+```bash
+python scripts/check_reconstruction_environment.py \
+  --python /path/to/the/python-used-for-test.py \
+  --reconstruction-repo /path/to/Deep3DFaceRecon_pytorch \
+  --checkpoint /path/to/model-checkpoint.pth \
+  --smoke-test
+```
+
+The helper checks `torch`, `torchvision`, `kornia`, and `dominate`. If
+`kornia` or `dominate` is missing, it prints a package-install command using
+the same interpreter; run that command and repeat the preflight. It does not
+install packages automatically, and it never recommends blindly reinstalling
+the core torch/torchvision stack. Add `--smoke-test` to run `test.py --help`,
+which checks the import/CLI path without processing any images.
+
+The geometry extractor now rejects invalid grid resolutions and malformed mesh
+coordinates, verifies subject-disjoint splits before each ablation, writes cache
+checkpoints through a temporary file replacement, and returns a non-zero exit
+status if any mesh failed extraction. Partial progress is still saved for a safe
+restart.
+
+### Automated checks
+
+GitHub Actions runs:
+
+```bash
+python -m compileall -q src scripts
+python -m pytest -q
+```
+
+The end-to-end smoke test uses synthetic data and does not require Google Drive, OBJ pilot meshes, the Deep3DFaceRecon checkpoint, or the official OULU-NPU data. Passing CI therefore confirms code/output generation, not that the private Colab pilot has completed successfully.

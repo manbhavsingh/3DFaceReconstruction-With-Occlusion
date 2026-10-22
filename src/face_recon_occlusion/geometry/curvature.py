@@ -38,8 +38,23 @@ def extract_curvature_features(
 
     if len(vertices) == 0 or len(faces) == 0:
         raise ValueError("Mesh contains no vertices or faces.")
+    if vertices.ndim != 2 or vertices.shape[1] != 3 or not np.isfinite(vertices).all():
+        raise ValueError("Mesh vertices must be a finite array with shape (n, 3).")
 
-    median_edge = float(np.median(mesh.edges_unique_length))
+    radius_multiplier = float(radius_multiplier)
+    if not np.isfinite(radius_multiplier) or radius_multiplier <= 0:
+        raise ValueError("radius_multiplier must be a finite positive number.")
+    if not isinstance(clip_percentiles, (tuple, list, np.ndarray)) or len(clip_percentiles) != 2:
+        raise ValueError("clip_percentiles must contain exactly two values (low, high).")
+    low, high = (float(clip_percentiles[0]), float(clip_percentiles[1]))
+    if not np.isfinite([low, high]).all() or not (0 <= low < high <= 100):
+        raise ValueError("clip_percentiles must satisfy 0 <= low < high <= 100.")
+
+    edge_lengths = np.asarray(mesh.edges_unique_length, dtype=np.float64)
+    usable_edges = edge_lengths[np.isfinite(edge_lengths) & (edge_lengths > 0)]
+    if usable_edges.size == 0:
+        raise ValueError("Mesh has no finite, positive-length edges.")
+    median_edge = float(np.median(usable_edges))
     curvature_radius = radius_multiplier * median_edge
 
     # Trimesh neighborhood-based discrete Gaussian curvature measure
@@ -66,8 +81,7 @@ def extract_curvature_features(
     if len(curvature_valid) == 0:
         raise ValueError("No valid interior Gaussian curvature values found.")
 
-    c_low = np.percentile(curvature_valid, clip_percentiles[0])
-    c_high = np.percentile(curvature_valid, clip_percentiles[1])
+    c_low, c_high = np.percentile(curvature_valid, [low, high])
 
     curvature_clipped = np.clip(curvature_valid, c_low, c_high)
 
