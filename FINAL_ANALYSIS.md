@@ -4,6 +4,8 @@
 **Primary Dataset:** OULU-NPU (Pilot-100 Cohort)  
 **Evaluation Protocol:** Subject-Disjoint Validation  
 
+> **Reproducibility note:** This committed table is a historical pilot snapshot. The corrected feature extractor changes depth-gradient scaling; regenerate the report from the corrected feature CSV before citing these metric values as results from the corrected pipeline. Unit and synthetic smoke tests validate software behavior, not real-dataset performance.
+
 ---
 
 ## 1. Research Question
@@ -60,8 +62,8 @@ Six baseline scalar geometric features were extracted directly from the reconstr
 
 1. **`depth_std`**: Standard deviation of median-centered Z-depth normalized by facial $xy\_scale$.
 2. **`depth_range`**: Peak-to-peak range ($\max - \min$) of normalized Z-depth.
-3. **`gradient_mean`**: Mean magnitude of 2D depth gradient ($|\nabla Z| = \sqrt{G_x^2 + G_y^2}$), normalized by $xy\_scale$ and robustly clipped at 1st/99th percentiles.
-4. **`gradient_std`**: Standard deviation of 2D depth-gradient magnitude.
+3. **`gradient_mean`**: Mean magnitude of the 2D depth-gradient slope (`|∇Z| = sqrt((dZ/dx)^2 + (dZ/dy)^2)`), robustly clipped at the 1st/99th percentiles. It is dimensionless and is not divided by `xy_scale`.
+4. **`gradient_std`**: Standard deviation of finite depth-gradient magnitudes after clipping; no additional `xy_scale` normalization is applied.
 5. **`gaussian_curvature_mean`**: Mean discrete Gaussian curvature measure calculated via Trimesh ($r = 2 \times \text{median\_edge\_length}$) excluding boundary vertices ($distance > r$).
 6. **`gaussian_curvature_std`**: Standard deviation of boundary-excluded Gaussian curvature.
 
@@ -167,7 +169,7 @@ The following scientific limitations must be acknowledged:
 
 - **Primary Conclusion**: The pilot experiment indicates that 3D geometric surface cues extracted from reconstructed monocular meshes provide non-random discriminative information for face presentation attack detection (Baseline ACER `0.4250`, ROC-AUC `0.6100` under subject-disjoint evaluation).
 - **Feature Synergy**: Depth, depth gradient, and Gaussian curvature each contribute complementary geometric information.
-- **Methodological Soundness**: Subject-disjoint validation proved that geometric cues do not rely on subject identity memorization.
+- **Protocol**: The subject-disjoint split reduces direct subject-identity leakage within this pilot, but the small cohort does not prove generalization to other subjects, capture conditions, or attack types.
 
 ---
 
