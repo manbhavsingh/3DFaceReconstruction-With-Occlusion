@@ -26,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from face_recon_occlusion.data import (
     create_subject_disjoint_split,
+    normalize_id,
     summarize_split,
     verify_subject_disjoint,
 )
@@ -65,22 +66,23 @@ def parse_args():
         help="Target label column (0=Bona Fide, 1=Spoof).",
     )
     parser.add_argument(
+        "--test-ratio",
+        type=float,
+        default=0.25,
+        help="Ratio of subjects allocated to test split if creating split (default: 0.25).",
+    )
+    parser.add_argument(
+        "--force-resplit",
+        action="store_true",
+        help="Force recomputation of train/test split even if 'split' column is already present.",
+    )
+    parser.add_argument(
         "--seed",
         type=int,
         default=42,
         help="Random seed for reproducibility.",
     )
     return parser.parse_args()
-
-
-def normalize_id(sid):
-    if pd.isna(sid):
-        return ""
-    s = str(sid).strip()
-    for ext in [".jpg", ".jpeg", ".png", ".obj", ".mat"]:
-        if s.lower().endswith(ext):
-            s = s[:-len(ext)]
-    return s
 
 
 def main():
@@ -96,9 +98,11 @@ def main():
     print("==========================================")
     print("3D FACE GEOMETRY PAD ABLATION EXPERIMENTS")
     print("==========================================")
+    print("Note: Subject-disjoint pilot split evaluation (not an official OULU-NPU protocol)")
     print(f"Input CSV    : {features_csv}")
     print(f"Output Dir   : {output_dir}")
     print(f"Random Seed  : {args.seed}")
+    print(f"Test Ratio   : {args.test_ratio}")
     print("==========================================")
 
     df = pd.read_csv(features_csv)
@@ -136,12 +140,14 @@ def main():
             f"Available columns: {list(df.columns)}."
         )
 
-    # Enforce subject-disjoint split if 'split' column is not already present
-    if "split" not in df.columns:
-        print("Creating subject-disjoint train/test split...")
+    # Enforce subject-disjoint split if 'split' column is not already present or forced
+    if "split" not in df.columns or args.force_resplit:
+        print(f"Creating subject-disjoint train/test split (test_ratio={args.test_ratio}, seed={args.seed})...")
         df = create_subject_disjoint_split(
-            df, subject_col=args.subject_col, test_ratio=0.3, random_state=args.seed
+            df, subject_col=args.subject_col, label_col=args.label_col, test_ratio=args.test_ratio, random_state=args.seed
         )
+    else:
+        print("ℹ️ Reusing existing 'split' column from input CSV to guarantee split consistency.")
 
     train_df = df[df["split"] == "train"]
     test_df = df[df["split"] == "test"]

@@ -24,14 +24,16 @@ from sklearn.metrics import (
 )
 
 
-def compute_pad_metrics(y_true, y_pred, y_prob=None):
+def compute_pad_metrics(y_true, y_pred, y_score=None, y_prob=None):
     """
-    Compute comprehensive PAD evaluation metrics adhering strictly to label conventions.
+    Compute comprehensive PAD evaluation metrics adhering strictly to ISO/IEC 30107-3 label conventions.
 
     Args:
         y_true (np.ndarray): True labels (0=Bona Fide, 1=Spoof).
         y_pred (np.ndarray): Predicted labels (0=Bona Fide, 1=Spoof).
-        y_prob (np.ndarray, optional): Predicted probabilities for spoof class (1).
+        y_score (np.ndarray, optional): Continuous decision scores or calibrated probabilities for spoof class (1).
+                                       Higher values indicate higher confidence of being Spoof (1).
+        y_prob (np.ndarray, optional): Legacy alias for y_score. If both are provided, y_score takes precedence.
 
     Returns:
         dict: Summary of metrics.
@@ -39,14 +41,19 @@ def compute_pad_metrics(y_true, y_pred, y_prob=None):
     y_true = np.asarray(y_true, dtype=int)
     y_pred = np.asarray(y_pred, dtype=int)
 
+    score = y_score if y_score is not None else y_prob
+
     acc = float(accuracy_score(y_true, y_pred))
     prec = float(precision_score(y_true, y_pred, pos_label=1, zero_division=0))
     rec = float(recall_score(y_true, y_pred, pos_label=1, zero_division=0))
     f1 = float(f1_score(y_true, y_pred, pos_label=1, zero_division=0))
 
-    if y_prob is not None:
+    if score is not None:
         try:
-            auc = float(roc_auc_score(y_true, y_prob))
+            if len(np.unique(y_true)) > 1:
+                auc = float(roc_auc_score(y_true, score))
+            else:
+                auc = float("nan")
         except ValueError:
             auc = float("nan")
     else:

@@ -1,0 +1,38 @@
+name: BTP Phase 2 Validation
+
+on:
+  push:
+    branches: [btp-phase2-corrected]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install test and analysis dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install \
+            "numpy>=1.23" "opencv-python-headless>=4.8" "Pillow>=10" \
+            "scikit-image>=0.21" "trimesh>=4.0" "pandas>=2.0" \
+            "scipy>=1.10" "tqdm>=4.66" "scikit-learn>=1.2" \
+            "seaborn>=0.12" "matplotlib>=3.7" "pytest>=7.0"
+      - name: Compile project scripts and package
+        run: python -m compileall -q src scripts
+      - name: Run unit and end-to-end smoke tests
+        env:
+          MPLBACKEND: Agg
+        run: python -m pytest -q
