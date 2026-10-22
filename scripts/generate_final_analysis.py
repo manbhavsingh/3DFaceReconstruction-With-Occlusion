@@ -450,6 +450,7 @@ def main():
     figures_dir = output_dir / "final_figures"
     figures_dir.mkdir(parents=True, exist_ok=True)
     synthetic_generated = False
+    is_synthetic_in_df = False
 
     if not features_csv.exists():
         if not args.allow_synthetic:
@@ -486,6 +487,7 @@ def main():
             "gradient_std": gradient_std,
             "gaussian_curvature_mean": curvature_mean,
             "gaussian_curvature_std": curvature_std,
+            "is_synthetic": [True] * n_samples,
         })
         features_csv.parent.mkdir(parents=True, exist_ok=True)
         df.to_csv(features_csv, index=False)
@@ -501,6 +503,9 @@ def main():
     print("==========================================")
 
     df = pd.read_csv(features_csv)
+    if "is_synthetic" in df.columns and df["is_synthetic"].any():
+        synthetic_generated = True
+        print("⚠️ WARNING: Loaded CSV contains synthetic mock data flags.")
 
     features_list = [
         "depth_std",

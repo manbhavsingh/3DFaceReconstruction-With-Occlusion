@@ -59,8 +59,15 @@ cells = [
         '    repo_dir = Path.cwd()',
         '',
         'if (repo_dir / ".git").exists():',
-        '    print(f"Repository detected at {repo_dir}. Pulling latest main branch...")',
-        '    subprocess.run(["git", "-C", str(repo_dir), "pull", "origin", "main"], check=False)',
+        '    print(f"Repository detected at {repo_dir}. Checking out btp-phase2-corrected branch...")',
+        '    subprocess.run(["git", "-C", str(repo_dir), "fetch", "origin"], check=True)',
+        '    subprocess.run(["git", "-C", str(repo_dir), "checkout", "btp-phase2-corrected"], check=True)',
+        '    branch_name = subprocess.check_output(["git", "-C", str(repo_dir), "rev-parse", "--abbrev-ref", "HEAD"], text=True).strip()',
+        '    commit_hash = subprocess.check_output(["git", "-C", str(repo_dir), "rev-parse", "HEAD"], text=True).strip()',
+        '    print(f"Current Branch: {branch_name}")',
+        '    print(f"Commit SHA: {commit_hash}")',
+        '    if branch_name != "btp-phase2-corrected":',
+        '        raise RuntimeError(f"Required branch not checked out! Current: {branch_name}")',
         'elif repo_dir.exists():',
         '    print(f"Repository directory exists at {repo_dir}.")',
         'else:',
@@ -146,7 +153,9 @@ cells = [
         'if not drive_root.exists():',
         '    drive_root = repo_dir / "outputs"',
         '',
-        'meta_path = drive_root / "oulu_subject_disjoint_pilot_100.csv"',
+        'meta_path = drive_root / "oulu_subject_disjoint_pilot_100_metadata.csv"',
+        'if not meta_path.exists():',
+        '    meta_path = drive_root / "oulu_subject_disjoint_pilot_100.csv"',
         'if not meta_path.exists():',
         '    meta_path = drive_root / "oulu_geometry_features.csv"',
         'if not meta_path.exists():',
@@ -338,7 +347,7 @@ cells = [
         'Compute ISO/IEC 30107-3 metrics (APCER, BPCER, ACER, ROC-AUC, Accuracy, Precision, Recall, F1, Confusion Matrix).'
     ]),
     make_cell('code', [
-        'base_metrics1 = compute_pad_metrics(y_test_full1, y_pred_baseline1, y_prob_baseline1)',
+        'base_metrics1 = compute_pad_metrics(y_test_full1, y_pred_baseline1, y_score=y_score_baseline1)',
         '',
         'print("==========================================")',
         'print("PRIMARY 6-FEATURE SVM EVALUATION RESULTS")',
@@ -418,9 +427,12 @@ cells = [
         '',
         'svm_model2 = train_svm(X_train_full2, y_train_full2, C=1.0, kernel="rbf", class_weight="balanced", random_state=42)',
         'y_pred_baseline2 = svm_model2.predict(X_test_full2)',
-        'y_prob_baseline2 = svm_model2.predict_proba(X_test_full2)[:, 1]',
+        'y_score_baseline2 = svm_model2.decision_function(X_test_full2)',
+        'classes2 = list(getattr(svm_model2, "classes_", [0, 1]))',
+        'if classes2 == [1, 0]:',
+        '    y_score_baseline2 = -y_score_baseline2',
         '',
-        'base_metrics2 = compute_pad_metrics(y_test_full2, y_pred_baseline2, y_prob_baseline2)',
+        'base_metrics2 = compute_pad_metrics(y_test_full2, y_pred_baseline2, y_score=y_score_baseline2)',
         'print("\\n==========================================")',
         'print("ROBUSTNESS SPLIT (SEED 100) METRICS")',
         'print("==========================================")',
@@ -441,7 +453,7 @@ cells = [
     ]),
     make_cell('code', [
         'failures1 = analyze_failures(',
-        '    test_subset1, y_pred_baseline1, y_prob_baseline1,',
+        '    test_subset1, y_pred_baseline1, y_score_baseline1,',
         '    subject_col="subject_id",',
         '    attack_col="attack_id" if "attack_id" in test_subset1.columns else None,',
         '    device_col="device_id" if "device_id" in test_subset1.columns else None',
@@ -505,7 +517,7 @@ cells = [
     make_cell('code', [
         'final_csv_file = final_out_dir / "final_results.csv"',
         'final_json_file = final_out_dir / "final_experiment_summary.json"',
-        'final_md_file = repo_dir / "FINAL_ANALYSIS.md"',
+        'final_md_file = final_out_dir / "FINAL_ANALYSIS.md"',
         '',
         'print(f"Checking final_results.csv       : {final_csv_file.exists()}")',
         'print(f"Checking final_summary.json      : {final_json_file.exists()}")',
@@ -538,7 +550,7 @@ cells = [
         '    final_out_dir / "final_figures" / "07_confusion_matrix.png",',
         '    final_out_dir / "final_figures" / "08_roc_curve.png",',
         '    final_out_dir / "final_figures" / "09_failure_analysis.png",',
-        '    repo_dir / "FINAL_ANALYSIS.md",',
+        '    final_out_dir / "FINAL_ANALYSIS.md",',
         ']',
         '',
         'all_passed = True',
@@ -566,7 +578,7 @@ notebook_json = {
     'nbformat_minor': 2
 }
 
-output_path = Path('/Users/shirishasingh/Desktop/BTPPART2/BTP_Part2_Geometry_PAD_OULU.ipynb')
+output_path = Path('BTP_Part2_Geometry_PAD_OULU_corrected.ipynb')
 with open(output_path, 'w') as f:
     json.dump(notebook_json, f, indent=1)
 
