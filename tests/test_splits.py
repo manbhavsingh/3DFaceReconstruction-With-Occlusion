@@ -101,3 +101,68 @@ def test_shared_split_consistency_across_ablations():
     for _, row in res_df.iterrows():
         total_eval = row["tn"] + row["fp"] + row["fn"] + row["tp"]
         assert total_eval == len(test_samples_before)
+
+
+def test_create_split_rejects_invalid_ratio():
+    df = pd.DataFrame({
+        "subject_id": ["a", "a", "b", "b"],
+        "label": [0, 1, 0, 1],
+    })
+    for ratio in (0, 1, -0.1, 1.2, np.nan):
+        with pytest.raises(ValueError, match="test_ratio"):
+            create_subject_disjoint_split(df, test_ratio=ratio)
+
+
+def test_create_split_rejects_missing_subject_ids():
+    df = pd.DataFrame({
+        "subject_id": ["a", None, "b", "b"],
+        "label": [0, 1, 0, 1],
+    })
+    with pytest.raises(ValueError, match="missing or blank subject IDs"):
+        create_subject_disjoint_split(df)
+
+
+def test_create_split_rejects_impossible_class_coverage():
+    # Only one subject contains the bona-fide class, so both partitions cannot contain both labels.
+    df = pd.DataFrame({
+        "subject_id": ["a", "b", "c", "d"],
+        "label": [0, 1, 1, 1],
+    })
+    with pytest.raises(ValueError, match="Could not create a subject-disjoint split"):
+        create_subject_disjoint_split(df)
+
+
+def test_ablation_rejects_subject_leakage():
+    rng = np.random.RandomState(8)
+    df = pd.DataFrame({
+        "subject_id": ["a", "a", "b", "b", "c", "c", "d", "d"],
+        "label": [0, 1, 0, 1, 0, 1, 0, 1],
+        "split": ["train", "test", "train", "train", "test", "test", "train", "test"],
+        "depth_std": rng.rand(8),
+        "depth_range": rng.rand(8),
+        "gradient_mean": rng.rand(8),
+        "gradient_std": rng.rand(8),
+        "gaussian_curvature_mean": rng.rand(8),
+        "gaussian_curvature_std": rng.rand(8),
+    })
+    with pytest.raises(ValueError, match="Subject identity leak detected"):
+        run_ablation_experiments(df)
+
+
+def test_ablation_rejects_non_finite_features():
+    rng = np.random.RandomState(4)
+    df = pd.DataFrame({
+        "sample_id": [f"s{i}" for i in range(8)],
+        "subject_id": ["a", "a", "b", "b", "c", "c", "d", "d"],
+        "label": [0, 1, 0, 1, 0, 1, 0, 1],
+        "split": ["train", "train", "train", "train", "test", "test", "test", "test"],
+        "depth_std": rng.rand(8),
+        "depth_range": rng.rand(8),
+        "gradient_mean": rng.rand(8),
+        "gradient_std": rng.rand(8),
+        "gaussian_curvature_mean": rng.rand(8),
+        "gaussian_curvature_std": rng.rand(8),
+    })
+    df.loc[0, "depth_std"] = np.nan
+    with pytest.raises(ValueError, match="Non-finite or non-numeric"):
+        run_ablation_experiments(df)

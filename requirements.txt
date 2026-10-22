@@ -3,6 +3,7 @@ opencv-python>=4.8
 Pillow>=10
 torch>=2.0
 torchvision>=0.15
+kornia>=0.7
 scikit-image>=0.21
 trimesh>=4.0
 pandas>=2.0

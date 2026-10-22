@@ -112,3 +112,25 @@ def test_unified_geometry_feature_extraction():
     for k in expected_keys:
         assert k in feats
         assert np.isfinite(feats[k])
+
+
+def test_gradient_rejects_invalid_grid_size():
+    """Reject resolutions that previously caused index errors or invalid grids."""
+    vertices = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 1.0], [0.0, 1.0, 1.0]])
+    for grid_size in (0, 1, 1.5, True):
+        with pytest.raises(ValueError, match="grid_size"):
+            extract_gradient_features(vertices, grid_size=grid_size)
+
+
+def test_gradient_rejects_non_finite_or_malformed_vertices():
+    with pytest.raises(ValueError, match="shape"):
+        extract_gradient_features(np.array([1.0, 2.0, 3.0]))
+    vertices = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 1.0], [0.0, 1.0, np.nan]])
+    with pytest.raises(ValueError, match="NaN or infinite"):
+        extract_gradient_features(vertices, grid_size=10)
+
+
+def test_curvature_rejects_invalid_radius_multiplier():
+    mesh = trimesh.creation.icosphere(subdivisions=2, radius=1.0)
+    with pytest.raises(ValueError, match="radius_multiplier"):
+        extract_curvature_features(mesh, radius_multiplier=0)

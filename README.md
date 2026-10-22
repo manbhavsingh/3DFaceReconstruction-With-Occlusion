@@ -55,7 +55,7 @@ pip install -e .
 For the full landmark/notebook workflow, install optional dependencies:
 
 ```bash
-pip install -e '.[landmarks,notebook]'
+pip install -e '.[landmarks,notebook,reconstruction]'
 ```
 
 You still need external model assets that are not committed to this repository:
@@ -165,6 +165,32 @@ Expected experiment outputs:
 - Nine figures in `final_analysis_corrected/final_figures/`
 
 The notebook checks outputs after each stage and stops on a failed assertion or subprocess. The gradient-scale comparison should show that the corrected gradient no longer divides by `xy_scale`; other geometry features should stay unchanged within tolerance. Review extraction failures, subject-disjoint split checks, and the report before using results.
+
+### Reconstruction-runtime preflight
+
+The upstream Deep3DFaceRecon checkout imports `kornia` while loading its model
+modules. Installing a package in one notebook/kernel interpreter does not prove
+that a separately launched Python executable can import it. Before a long run,
+check the exact interpreter used for `test.py`:
+
+```bash
+python scripts/check_reconstruction_environment.py \
+  --python /path/to/the/python-used-for-test.py \
+  --reconstruction-repo /path/to/Deep3DFaceRecon_pytorch \
+  --checkpoint /path/to/checkpoints/face_recon_feat0.2_augment/epoch_20.pth
+```
+
+If the check reports missing `kornia`, install it using that same interpreter
+(`/path/to/python -m pip install 'kornia>=0.7'`) and rerun the preflight. The
+script never installs packages automatically. This targets the failure where a
+notebook reports Kornia available but the subprocess running `test.py` raises
+`ModuleNotFoundError: No module named 'kornia'`.
+
+The geometry extractor now rejects invalid grid resolutions and malformed mesh
+coordinates, verifies subject-disjoint splits before each ablation, writes cache
+checkpoints through a temporary file replacement, and returns a non-zero exit
+status if any mesh failed extraction. Partial progress is still saved for a safe
+restart.
 
 ### Automated checks
 

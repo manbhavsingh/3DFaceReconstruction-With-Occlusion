@@ -14,8 +14,11 @@ Restart-Safe Policy:
 """
 
 import argparse
+import os
 import sys
+import tempfile
 from pathlib import Path
+import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
@@ -69,55 +72,64 @@ def parse_args():
 
 
 def load_cache(output_csv, force_recompute=False):
-    """
-    Load existing feature table cache from output_csv if present.
-
-    Returns:
-        dict: Mapping of sample_id -> row_dict.
-    """
-    cache_dict = {}
+    """Load a validated feature cache, failing closed instead of risking prior results."""
     if not output_csv.exists() or force_recompute:
-        return cache_dict
-
+        return {}
     try:
         df = pd.read_csv(output_csv)
-        required_cols = [
-            "sample_id",
-            "depth_std",
-            "depth_range",
-            "gradient_mean",
-            "gradient_std",
-            "gaussian_curvature_mean",
-            "gaussian_curvature_std",
-        ]
-        if not all(col in df.columns for col in required_cols):
-            print(f"⚠️ Cache at {output_csv} missing required feature columns. Will re-extract.")
-            return cache_dict
+    except Exception as exc:
+        raise ValueError(
+            f"Cannot read existing feature cache {output_csv}; inspect/repair it or use "
+            "--force-recompute only if replacing it is intentional."
+        ) from exc
 
-        for _, row in df.iterrows():
-            cache_dict[str(row["sample_id"])] = row.to_dict()
+    required_cols = [
+        "sample_id", "depth_std", "depth_range", "gradient_mean", "gradient_std",
+        "gaussian_curvature_mean", "gaussian_curvature_std",
+    ]
+    missing = [col for col in required_cols if col not in df.columns]
+    if missing:
+        raise ValueError(f"Existing feature cache {output_csv} is missing columns {missing}; it was left untouched.")
+    if df["sample_id"].isna().any():
+        raise ValueError(f"Existing feature cache {output_csv} contains missing sample_id values.")
+    normalized_ids = df["sample_id"].map(normalize_id)
+    if normalized_ids.eq("").any() or normalized_ids.duplicated().any():
+        raise ValueError(f"Existing feature cache {output_csv} contains blank or duplicate normalized sample IDs.")
+    feature_values = df[required_cols[1:]].apply(pd.to_numeric, errors="coerce").to_numpy(dtype=float)
+    if not np.isfinite(feature_values).all():
+        raise ValueError(f"Existing feature cache {output_csv} contains non-finite/non-numeric features; it was left untouched.")
 
-        print(f"✅ Found valid cache with {len(cache_dict)} processed samples at {output_csv}.")
-    except Exception as e:
-        print(f"⚠️ Warning: Failed to read existing cache at {output_csv} ({e}). Will compute missing.")
-
+    cache_dict = {}
+    for _, row in df.iterrows():
+        cache_dict[normalize_id(row["sample_id"])] = row.to_dict()
+    print(f"Found validated cache with {len(cache_dict)} processed samples at {output_csv}.")
     return cache_dict
 
 
 def save_progress(records, output_csv):
-    """Save records DataFrame atomically to disk."""
+    """Write a checkpoint to a temporary file, then replace the previous CSV."""
     output_csv.parent.mkdir(parents=True, exist_ok=True)
     df = pd.DataFrame(records)
-    # Ensure standard column order
     key_cols = [
         "sample_id", "subject_id", "label", "attack_id", "device_id",
         "depth_std", "depth_range", "gradient_mean", "gradient_std",
         "gaussian_curvature_mean", "gaussian_curvature_std",
-        "xy_scale", "curvature_radius", "obj_path"
+        "xy_scale", "curvature_radius", "obj_path",
     ]
-    present_cols = [c for c in key_cols if c in df.columns] + [c for c in df.columns if c not in key_cols]
+    present_cols = [col for col in key_cols if col in df.columns]
+    present_cols += [col for col in df.columns if col not in present_cols]
     df = df[present_cols]
-    df.to_csv(output_csv, index=False)
+
+    fd, tmp_name = tempfile.mkstemp(
+        prefix=f".{output_csv.name}.", suffix=".tmp", dir=str(output_csv.parent)
+    )
+    os.close(fd)
+    try:
+        df.to_csv(tmp_name, index=False)
+        os.replace(tmp_name, output_csv)
+    finally:
+        if os.path.exists(tmp_name):
+            os.unlink(tmp_name)
 
 
 def main():
@@ -125,7 +137,14 @@ def main():
     mesh_dir = Path(args.mesh_dir)
     output_csv = Path(args.output_csv)
 
-    if not mesh_dir.exists():
+    if args.save_interval < 1:
+        raise SystemExit("--save-interval must be an integer >= 1.")
+    if args.metadata_csv and not Path(args.metadata_csv).is_file():
+        raise SystemExit(f"Metadata CSV does not exist: {args.metadata_csv}")
+    if args.metadata_csv and output_csv.resolve() == Path(args.metadata_csv).resolve():
+        raise SystemExit("Output CSV must not overwrite the metadata input CSV.")
+
+    if not mesh_dir.is_dir():
         print(f"❌ Error: Mesh directory does not exist: {mesh_dir}")
         sys.exit(1)
 
@@ -158,9 +177,17 @@ def main():
     obj_files = sorted(list(mesh_dir.rglob("*.obj")))
     print(f"Found {len(obj_files)} OBJ mesh files in {mesh_dir}.")
 
-    if len(obj_files) == 0:
-        print(f"⚠️ Warning: No .obj files found in {mesh_dir}.")
-        sys.exit(0)
+    if not obj_files:
+        print(f"Error: No .obj files found in {mesh_dir}.")
+        sys.exit(2)
+
+    stems = [normalize_id(path.stem) for path in obj_files]
+    duplicates = sorted({stem for stem in stems if stems.count(stem) > 1})
+    if duplicates:
+        raise ValueError(
+            "Multiple OBJ files resolve to the same sample_id; extraction would create "
+            f"ambiguous cache rows: {duplicates[:20]}"
+        )
 
     records = list(cache_dict.values())
     reused_count = 0
@@ -174,9 +201,10 @@ def main():
         norm_stem = normalize_id(sample_id)
 
         # Check if already in cache
-        if sample_id in cache_dict and not args.force_recompute:
+        cache_key = normalize_id(sample_id)
+        if cache_key in cache_dict and not args.force_recompute:
             # Backfill metadata if missing in cached row
-            rec = cache_dict[sample_id]
+            rec = cache_dict[cache_key]
             matched_meta = metadata_map.get(norm_stem) or metadata_map.get(sample_id)
             if matched_meta:
                 for k, v in matched_meta.items():
@@ -201,7 +229,7 @@ def main():
                         rec[k] = v
 
             records.append(rec)
-            cache_dict[sample_id] = rec
+            cache_dict[cache_key] = rec
             computed_count += 1
 
             # RESTART-SAFE: Incremental save
@@ -235,6 +263,9 @@ def main():
     print(f"Failed Extraction  : {failed_count}")
     print(f"Output CSV         : {output_csv}")
     print("==========================================")
+    if failed_count:
+        print(f"ERROR: {failed_count} mesh(es) failed extraction. Partial progress was saved; inspect the errors above.")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

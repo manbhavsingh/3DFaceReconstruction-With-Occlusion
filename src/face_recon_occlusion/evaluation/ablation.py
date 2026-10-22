@@ -2,7 +2,9 @@
 Ablation experiment runner for 3D face geometry PAD features.
 """
 
+import numpy as np
 import pandas as pd
+from ..data.splits import verify_subject_disjoint
 from ..models.svm import train_svm
 from .pad_metrics import compute_pad_metrics
 
@@ -52,14 +54,23 @@ def run_ablation_experiments(df, subject_col="subject_id", label_col="label", ra
     Returns:
         pd.DataFrame: Summary table of metrics across all 5 experiments.
     """
-    if "split" not in df.columns:
-        raise KeyError("DataFrame must contain 'split' column ('train'/'test').")
+    required = [subject_col, label_col, "split"]
+    missing_required = [col for col in required if col not in df.columns]
+    if missing_required:
+        raise KeyError(f"Missing required columns: {missing_required}")
+    if df.empty or df["split"].isna().any() or set(df["split"].unique()) != {"train", "test"}:
+        raise ValueError("split column must contain only 'train' and 'test', with both present.")
 
     train_df = df[df["split"] == "train"]
     test_df = df[df["split"] == "test"]
+    verify_subject_disjoint(train_df, test_df, subject_col=subject_col)
 
-    y_train = train_df[label_col].values
-    y_test = test_df[label_col].values
+    y_train = pd.to_numeric(train_df[label_col], errors="coerce").to_numpy()
+    y_test = pd.to_numeric(test_df[label_col], errors="coerce").to_numpy()
+    if not np.isfinite(y_train).all() or not np.isfinite(y_test).all():
+        raise ValueError("Labels contain missing or non-numeric values.")
+    if set(np.unique(y_train)) != {0, 1} or set(np.unique(y_test)) != {0, 1}:
+        raise ValueError("Both train and test partitions must contain binary labels 0 and 1.")
 
     results = []
 
@@ -69,8 +80,10 @@ def run_ablation_experiments(df, subject_col="subject_id", label_col="label", ra
         if missing:
             raise KeyError(f"Missing feature columns for {exp_name}: {missing}")
 
-        X_train = train_df[feature_list].values
-        X_test = test_df[feature_list].values
+        X_train = train_df[feature_list].apply(pd.to_numeric, errors="coerce").to_numpy(dtype=float)
+        X_test = test_df[feature_list].apply(pd.to_numeric, errors="coerce").to_numpy(dtype=float)
+        if not np.isfinite(X_train).all() or not np.isfinite(X_test).all():
+            raise ValueError(f"Non-finite or non-numeric values found for {exp_name}.")
 
         # Train pipeline on train_df ONLY
         pipeline = train_svm(

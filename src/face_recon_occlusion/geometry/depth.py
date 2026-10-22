@@ -21,8 +21,12 @@ def extract_depth_features(vertices):
         }
     """
     vertices = np.asarray(vertices, dtype=np.float64)
-    if len(vertices) == 0:
-        raise ValueError("Vertices array is empty.")
+    if vertices.ndim != 2 or vertices.shape[1] != 3:
+        raise ValueError(f"Vertices must have shape (n, 3); got {vertices.shape}.")
+    if len(vertices) < 3:
+        raise ValueError("At least three vertices are required for depth features.")
+    if not np.isfinite(vertices).all():
+        raise ValueError("Vertices contain NaN or infinite coordinates.")
 
     x = vertices[:, 0]
     y = vertices[:, 1]
@@ -32,7 +36,7 @@ def extract_depth_features(vertices):
     xy_height = float(y.max() - y.min())
     xy_scale = float(np.sqrt(xy_width**2 + xy_height**2))
 
-    if xy_scale <= 1e-8:
+    if not np.isfinite(xy_scale) or xy_scale <= 1e-8:
         raise ValueError(f"Invalid or near-zero XY scale in mesh: {xy_scale}")
 
     # Center depth by median to eliminate translation ambiguity
