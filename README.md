@@ -177,7 +177,8 @@ used for `test.py` before retrying an image:
 python scripts/check_reconstruction_environment.py \
   --python /path/to/the/python-used-for-test.py \
   --reconstruction-repo /path/to/Deep3DFaceRecon_pytorch \
-  --checkpoint /path/to/checkpoints/face_recon_feat0.2_augment/epoch_20.pth
+  --checkpoint /path/to/model-checkpoint.pth \
+  --smoke-test
 ```
 
 The helper checks `torch`, `torchvision`, `kornia`, and `dominate`. If
