@@ -168,10 +168,10 @@ The notebook checks outputs after each stage and stops on a failed assertion or 
 
 ### Reconstruction-runtime preflight
 
-The upstream Deep3DFaceRecon checkout imports `kornia` while loading its model
-modules. Installing a package in one notebook/kernel interpreter does not prove
-that a separately launched Python executable can import it. Before a long run,
-check the exact interpreter used for `test.py`:
+The upstream Deep3DFaceRecon checkout imports both `kornia` and `dominate`.
+Installing a package in one notebook/kernel interpreter does not prove that a
+separately launched Python executable can import it. Check the exact interpreter
+used for `test.py` before retrying an image:
 
 ```bash
 python scripts/check_reconstruction_environment.py \
@@ -180,11 +180,12 @@ python scripts/check_reconstruction_environment.py \
   --checkpoint /path/to/checkpoints/face_recon_feat0.2_augment/epoch_20.pth
 ```
 
-If the check reports missing `kornia`, install it using that same interpreter
-(`/path/to/python -m pip install 'kornia>=0.7'`) and rerun the preflight. The
-script never installs packages automatically. This targets the failure where a
-notebook reports Kornia available but the subprocess running `test.py` raises
-`ModuleNotFoundError: No module named 'kornia'`.
+The helper checks `torch`, `torchvision`, `kornia`, and `dominate`. If
+`kornia` or `dominate` is missing, it prints a package-install command using
+the same interpreter; run that command and repeat the preflight. It does not
+install packages automatically, and it never recommends blindly reinstalling
+the core torch/torchvision stack. Add `--smoke-test` to run `test.py --help`,
+which checks the import/CLI path without processing any images.
 
 The geometry extractor now rejects invalid grid resolutions and malformed mesh
 coordinates, verifies subject-disjoint splits before each ablation, writes cache
